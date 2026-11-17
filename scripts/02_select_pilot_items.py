@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--min-sec", type=float, default=2.0)
     ap.add_argument("--max-sec", type=float, default=8.0)
     ap.add_argument("--drop-pattern", default=step1.DEFAULT_DROP_PATTERN)
+    ap.add_argument("--min-chars", type=int, default=step1.DEFAULT_MIN_CHARS)
     a = ap.parse_args()
 
     out = a.out_dir / a.run_id
@@ -48,6 +49,7 @@ def main():
     v = v[~v["client_id"].isin(ex_spk) & ~v["tkey"].isin(ex_txt) & ~v["path"].isin(used_paths)]
     v = v[(v["sec"] >= a.min_sec) & (v["sec"] <= a.max_sec)]
     v, _ = step1.drop_hard_text(v, a.drop_pattern)
+    v, _ = step1.drop_short_text(v, a.min_chars)
 
     rng = np.random.default_rng(a.seed)
     rows = []

@@ -3,9 +3,11 @@
 Two variants per item, everything else at the developer defaults:
   A  postprocess_output=True  (default: removes long silences)
   B  postprocess_output=False
-Both use language="th", the reference clip's own sentence as ref_text, and
-duration = length of the real clip minus the default padding (0.1 s per side),
-so the clone comes out about as long as the real clip.
+Both use language="th" and the reference clip's own sentence as ref_text.
+duration = length of the *speech* in the real clip (leading/trailing silence cut,
+see audio_utils.speech_bounds), so the clone is about as long as the spoken part.
+Using the whole clip length made the model fill the extra time with words from the
+reference when the sentence was very short.
 
 Output (local only, never commit): <out-dir>/<run-id>/
   <item_id>/real.wav, ref.wav, clone_A.wav, clone_B.wav
@@ -34,6 +36,10 @@ import pandas as pd
 import soundfile as sf
 import torch
 from omnivoice import OmniVoice
+
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from audio_utils import speech_bounds  # noqa: E402
 
 MODEL_ID = "k2-fsa/OmniVoice"
 PAD = 0.1
@@ -87,12 +93,16 @@ def main():
         for name, col in (("real", "real_path"), ("ref", "ref_path")):
             wav, sr = sf.read(a.cv_dir / "clips" / it[col], dtype="float32")
             sf.write(d / f"{name}.wav", wav, sr)
-        target = max(float(it["real_sec"]) - 2 * PAD, 0.5)
+            if name == "real":
+                s0, s1 = speech_bounds(wav, sr)
+                speech_sec = s1 - s0
+        target = max(speech_sec, 0.5)
         for v, extra in VARIANTS.items():
             seed = a.seed + i
             set_seed(seed)
             row = {"item_id": it["item_id"], "variant": v, "seed": seed,
-                   "real_sec": float(it["real_sec"]), "duration_arg": round(target, 3)}
+                   "real_sec": float(it["real_sec"]), "real_speech_sec": round(speech_sec, 3),
+                   "duration_arg": round(target, 3)}
             try:
                 if cuda:
                     torch.cuda.reset_peak_memory_stats()
@@ -130,7 +140,8 @@ def main():
         "clips_ok": int(len(ok)), "clips_failed": int(len(clones) - len(ok)),
         "median_gen_sec": float(ok["gen_sec"].median()) if len(ok) else None,
         "max_peak_vram_mb": float(ok["peak_vram_mb"].max()) if len(ok) and cuda else None,
-        "median_abs_len_diff_sec": {v: float((g["out_sec"] - g["real_sec"]).abs().median())
+        "target": "duration = speech length of the real clip (audio_utils.speech_bounds)",
+        "median_abs_len_diff_vs_speech_sec": {v: float((g["out_sec"] - 2 * PAD - g["real_speech_sec"]).abs().median())
                                     for v, g in ok.groupby("variant")},
     }
     (out / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
