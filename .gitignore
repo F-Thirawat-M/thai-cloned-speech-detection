@@ -1,6 +1,7 @@
 # ข้อมูลจริง เสียง และ metadata รายคลิป ห้าม commit
 data/
 results/
+checkpoints/
 *.wav
 *.mp3
 *.flac

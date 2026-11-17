@@ -10,6 +10,8 @@ Rules:
   * Reference clip = another clip of the same speaker, different sentence, 2-8 s.
   * VC source clip = the same sentence read by a speaker who is not in any split.
   * Speakers and sentences from the old pilot are excluded.
+  * Clips whose sentence contains the repetition mark "ๆ" or Latin letters are dropped
+    (cloning systems skip or misread them), for both real and reference clips.
 """
 import argparse
 import csv
@@ -40,6 +42,17 @@ def load_validated(cv_dir: Path) -> pd.DataFrame:
     return v
 
 
+DEFAULT_DROP_PATTERN = r"[ๆA-Za-z]"
+
+
+def drop_hard_text(v: pd.DataFrame, pattern: str):
+    """Remove clips whose sentence matches pattern; returns (kept, number dropped)."""
+    if not pattern:
+        return v, 0
+    bad = v["sentence"].str.contains(pattern, regex=True)
+    return v[~bad].copy(), int(bad.sum())
+
+
 def load_exclusions(paths):
     speakers, tkeys = set(), set()
     for p in paths:
@@ -67,6 +80,8 @@ def main():
     ap.add_argument("--max-sec", type=float, default=10.0)
     ap.add_argument("--ref-min-sec", type=float, default=2.0)
     ap.add_argument("--ref-max-sec", type=float, default=8.0)
+    ap.add_argument("--drop-pattern", default=DEFAULT_DROP_PATTERN,
+                    help="regex; clips whose sentence matches are dropped ('' keeps all)")
     a = ap.parse_args()
 
     out = a.out_dir / a.run_id
@@ -78,6 +93,7 @@ def main():
     n_all = len(v)
     ex_spk, ex_txt = load_exclusions(a.exclude_manifest)
     v = v[~v["client_id"].isin(ex_spk) & ~v["tkey"].isin(ex_txt)].copy()
+    v, n_dropped_text = drop_hard_text(v, a.drop_pattern)
 
     paired_ok = v[(v["sec"] >= a.min_sec) & (v["sec"] <= a.max_sec)]
     ref_ok = v[(v["sec"] >= a.ref_min_sec) & (v["sec"] <= a.ref_max_sec)]
@@ -159,6 +175,7 @@ def main():
 
     summary = {"run_id": a.run_id, "seed": a.seed, "cv_dir_name": a.cv_dir.name,
                "validated_rows": n_all, "excluded_speakers": len(ex_spk), "excluded_sentences": len(ex_txt),
+               "dropped_clips_by_text_pattern": n_dropped_text, "drop_pattern": a.drop_pattern,
                "eligible_speakers": len(speakers), "params": {k: (str(x) if isinstance(x, Path) else x)
                                                                for k, x in vars(a).items() if k not in ("cv_dir", "exclude_manifest")},
                "splits": {}}
