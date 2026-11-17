@@ -1,0 +1,11 @@
+# ข้อมูลจริง เสียง และ metadata รายคลิป ห้าม commit
+data/
+results/
+*.wav
+*.mp3
+*.flac
+*.pt
+*.pth
+.venv*/
+__pycache__/
+*.py[cod]
